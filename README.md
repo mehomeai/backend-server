@@ -7,7 +7,9 @@ Learn about the vision at [Me — Your intelligence. Yours.](https://mehomeai.re
 
 ## Status
 
-Implemented locally (not shipped; all changes uncommitted). Coordination
+Implemented on review branch `feat/home-agent-foundation`
+(committed/pushed; draft PR #1 pending review/checks). No merge to
+protected `main`; no deployed release. Coordination
 service (loopback dev + hosted-auth readiness): home registration/discovery,
 account-to-home membership, one-time registration/join/activation tickets
 (B7 ticket-only activate, 7-key `0600` file, `redirect: 'error'` never
