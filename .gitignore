@@ -16,6 +16,10 @@ Thumbs.db
 .vscode/
 *.swp
 
+# Local backend coordination state (durable dev data; never commit)
+data/
+*.tmp.*
+
 # Common local caches and outputs; refine when the project stack is selected
 __pycache__/
 *.py[cod]

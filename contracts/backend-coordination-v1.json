@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mehomeai.example/schemas/backend-coordination-v1.json",
+  "title": "backend-coordination-v1",
+  "description": "Machine-readable summary of the backend-owned coordination surface only. Home private API is H1-owned (infra-server/contracts/home-api-v1.md + .openapi.json). endpointHint carries the home protected base URL opaquely; installationId correlates backend homeId with H1 installation_id. Auth modes: explicit dev tokens (loopback-only) or hosted OIDC JWT verification (jose, static trusted JWKS or fixed trusted JWKS HTTPS URL). Public login metadata: GET /v1/auth/config (protocol account-auth-v1); verification: GET /v1/account. Full contract: docs/account-auth-v1.md.",
+  "type": "object",
+  "properties": {
+    "service": { "const": "backend-server" },
+    "version": { "const": 1 },
+    "authModes": {
+      "type": "object",
+      "properties": {
+        "dev": { "const": "dev bearer tokens + fleet setup secret; loopback binds only" },
+        "hosted": { "const": "OIDC JWT access-tokens (signature/exp/issuer/audience/subject, asymmetric algorithms, static JWKS or fixed trusted JWKS HTTPS URL with caching/rotation/timeout, optional token_use); identity acct_<sha256(iss,sub)>; registration via account-bound one-time tickets, no fleet secret; public login metadata GET /v1/auth/config (account-auth-v1), verification GET /v1/account" }
+      },
+      "required": ["dev", "hosted"]
+    },
+    "homeContract": { "const": "infra-server/contracts/home-api-v1.md (authoritative for H1; .openapi.json beside it)" },
+    "homeIdentityMapping": {
+      "type": "object",
+      "properties": {
+        "homeId": { "const": "backend coordination key ^[a-z0-9][a-z0-9_-]{2,63}$; generated as home_<18 lowercase hex> when omitted" },
+        "installationId": { "const": "H1 installation identity (uuid), stored verbatim at register/heartbeat, returned on reads; uniqueness not enforced" },
+        "endpointHint": { "const": "home protected base URL, opaque, never fetched" },
+        "protocolVersion": { "const": "\"home-api-v1\" when the home speaks H1's contract" }
+      },
+      "required": ["homeId", "installationId", "endpointHint", "protocolVersion"]
+    },
+    "credentialSeparation": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [
+        "Backend ticketId/ticketSecret binds account<->home membership; never a device credential.",
+        "H1 invitation_id/invitation_secret enrolls a device at the home; never sent to the backend.",
+        "Backend me_home_* token authenticates the home to the backend only.",
+        "H1 device_id+device_secret / ht1_* session token authenticates a device to the home only."
+      ]
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "account": { "const": "Authorization: Bearer <dev-account-token> (dev) or <OIDC JWT> (hosted)" },
+        "home": { "const": "Authorization: Bearer <home-token>" },
+        "setup": { "const": "X-Me-Setup-Token: <setup-secret> (dev only; refused in hosted mode)" }
+      },
+      "required": ["account", "home", "setup"]
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "method": { "type": "string" },
+          "path": { "type": "string" },
+          "auth": { "type": "string", "enum": ["none", "account", "home-self", "setup", "account-or-home-self"] }
+        },
+        "required": ["method", "path", "auth"]
+      },
+      "default": [
+        { "method": "GET", "path": "/healthz", "auth": "none" },
+        { "method": "GET", "path": "/v1/auth/config", "auth": "none" },
+        { "method": "GET", "path": "/v1/account", "auth": "account" },
+        { "method": "POST", "path": "/v1/homes/registration-tickets", "auth": "account" },
+        { "method": "POST", "path": "/v1/homes/register", "auth": "setup" },
+        { "method": "POST", "path": "/v1/homes/activation-tickets", "auth": "account" },
+        { "method": "POST", "path": "/v1/homes/activate", "auth": "none" },
+        { "method": "GET", "path": "/v1/homes", "auth": "account" },
+        { "method": "GET", "path": "/v1/homes/{homeId}", "auth": "account-or-home-self" },
+        { "method": "POST", "path": "/v1/homes/{homeId}/heartbeat", "auth": "home-self" },
+        { "method": "GET", "path": "/v1/homes/{homeId}/status", "auth": "account-or-home-self" },
+        { "method": "POST", "path": "/v1/homes/{homeId}/join-tickets", "auth": "home-self" },
+        { "method": "POST", "path": "/v1/homes/{homeId}/members/join", "auth": "account" },
+        { "method": "GET", "path": "/v1/homes/{homeId}/members", "auth": "account-or-home-self" },
+        { "method": "DELETE", "path": "/v1/homes/{homeId}/members/{accountId}", "auth": "account-or-home-self" }
+      ]
+    },
+    "identityRule": {
+      "const": "Identity is derived server-side from the presented credential. accountId/userId fields in request bodies are rejected."
+    },
+    "nonGoals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [
+        "No chat/conversation/message/task/content endpoints or payload storage.",
+        "No home task scheduler or dispatch authority.",
+        "Hosted auth readiness only: OIDC verification implemented, no IdP provisioned.",
+        "Does not define the home private paired-device API (H1-owned).",
+        "Single-process JSON store; no production database concurrency claimed."
+      ]
+    }
+  },
+  "required": ["service", "version", "authModes", "homeContract", "homeIdentityMapping", "credentialSeparation", "auth", "endpoints", "identityRule", "nonGoals"]
+}
