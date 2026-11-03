@@ -7,13 +7,36 @@ Learn about the vision at [Me — Your intelligence. Yours.](https://mehomeai.re
 
 ## Status
 
-This repository is at the initial setup stage. Application code, supported platforms,
-installation steps, and release commitments have not been established yet.
-The current CI checks repository hygiene; it does not validate a working product.
+Implemented on review branch `feat/home-agent-foundation`
+(committed/pushed; draft PR #1 pending review/checks). No merge to
+protected `main`; no deployed release. Coordination
+service (loopback dev + hosted-auth readiness): home registration/discovery,
+account-to-home membership, one-time registration/join/activation tickets
+(B7 ticket-only activate, 7-key `0600` file, `redirect: 'error'` never
+followed), heartbeats with server-side `online`, and revocation against a
+single-process JSON store. Household data and execution stay on the home
+host; the hosted backend coordinates accounts/home access only — no private
+chat relay or payload storage. Verified (final): `node --test
+test/*.test.mjs` — **39 pass / 0 fail**. Overall cross-repo evidence:
+`docs/final-validation.md` (overall report with the full result table).
+This is not a provisioned IdP, tunnel/edge, or production install — see the
+manual gates there. Phone login handoff: `docs/account-auth-v1.md`
+(`GET /v1/auth/config` + `GET /v1/account`).
 
 ## Scope
 
 Application APIs, authentication, authorization, and service integration.
+
+## Coordination API (dev slice + hosted-auth readiness)
+
+Minimal hosted coordination for home registration/discovery and
+authenticated account-to-home membership: `docs/backend-api-v1.md`
+(reference), `contracts/backend-coordination-v1.json` (machine-readable
+endpoint summary), `docs/backend-launch.md` (run/configure), and
+`docs/backend-handoff.md` (integration and H1 dependency). Auth modes:
+explicit local-dev bearer identity (loopback-only), or hosted OIDC JWT
+verification via `jose` against static trusted issuer/audience/JWKS (B2;
+no IdP provisioned). No chat payload storage or relay.
 
 ## Contributing
 
