@@ -38,7 +38,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Node
-        uses: actions/setup-node@5c79832639c874aef5db836a6f0ef7f26540b45 # v6.1.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24.18.0"
       - name: Install dependencies
