@@ -1,8 +1,8 @@
-# Final validation — overall cross-repo local validation record (review branch, no deployed release)
+# Final validation — overall cross-repo local validation record (merged to main, no deployed release)
 
-Status: initial integrated implementation complete on review branch `feat/home-agent-foundation` (committed/pushed; draft PR #1 pending review/checks). No merge to protected `main`; no deployed release.
+Status: initial integrated implementation complete on `main` (foundation PR #1; upstream agent infrastructure PR #2, merged 2026-11-03). No deployed release.
 
-Local evidence root (ephemeral, not committed): `/private/tmp/me-opencode-live-20261103` — proof logs under `logs/`, release marker at `source-release-ready.json` (protocol `source-release-ready-v1`). Results below are the local validation record; current remote PR check status not verified — see draft PR #1 checks.
+Local evidence root (ephemeral, not committed): `/private/tmp/me-opencode-live-20261103` — proof logs under `logs/`, release marker at `source-release-ready.json` (protocol `source-release-ready-v1`). Results below are the local validation record from the original validation run.
 
 Canonical architecture: `agentic-framework/docs/product-architecture.md` (implemented locally). Delivery status: `agentic-framework/docs/product-delivery-plan.md`.
 
@@ -21,7 +21,7 @@ Canonical architecture: `agentic-framework/docs/product-architecture.md` (implem
 | Mobile official SDK type-mirror | **exit 0, 51 packages**, zero ambient stubs; NOT a native build | `logs/accepted-mobile-types-release.log` (empty, exit 0 recorded root exec) |
 | Mobile syntax | **52 checked / 0 fail** (separate from semantic) | `logs/accepted-mobile-syntax-release.log` |
 | Live model strict | **pass, 47.538s** — Meta Muse Spark 1.3 via actual SDK/remote opt-in, synthetic only: delegate→parent waits→child succeeds→5-byte ORBIT downloaded→answer English→parent final contains ORBIT+English→exactly 1 parent assistant; strict assertions, not fixture | `logs/live-response-extraction-fix.jsonl` |
-| CI/system acceptance | YAML/input validation + upstream-source verification local only; results below are the local validation record — current remote PR check status not verified, see draft PR #1 checks; review-branch commits pushed, no merge to protected `main`, no deploy | local only |
+| CI/system acceptance | YAML/input validation + upstream-source verification local only; results below are the local validation record from the original validation run; no deploy | local only |
 
 Timing note: one overloaded concurrent independent run showed 7 pass + 2 polling-timeouts; both passed on focused rerun without source/assertion changes — final 9/9 serial acceptance unchanged. CI serializes home test files to avoid redundant interpreter-startup contention; within-case concurrency remains tested. Early live attempts surfaced a structured-content bug; the passing final is the response-block-extract fix with strict assertions.
 
@@ -51,6 +51,6 @@ full native Expo install/bundle + real device flows; actual Docker code+browser 
 
 ## 5. Operator next steps
 
-1. Review the coordinated draft PRs and merge after required checks; back up `backend-state.json` + home DB/tasks before destructive ops.
+1. Back up `backend-state.json` + home DB/tasks before destructive ops.
 2. Provision the parked items above with provider tooling; setup records references only, never provisions.
-3. Re-run each owner suite per runbook §6 on the release checkout, then dispatch the pinned system-acceptance workflow (shell inputs via ENV, validated 40-hex refs, no source interpolation) — current remote PR check status not verified, see draft PR #1 checks.
+3. Re-run each owner suite per runbook §6 on the release checkout, then dispatch the pinned system-acceptance workflow (shell inputs via ENV, validated 40-hex refs, no source interpolation).
