@@ -45,6 +45,12 @@ import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { loadConfig, assertSafeBind } from "./config.mjs";
 import { createOidcVerifier } from "./oidc.mjs";
 import { loadState, saveState } from "./store.mjs";
+import {
+  parseCorsAllowedOrigins,
+  corsMatchOrigin,
+  handleCorsPreflight,
+  applyCorsHeaders,
+} from "./cors.mjs";
 
 const HOME_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 // H1's installation identity is opaque to this service (a uuid in H1's
@@ -372,6 +378,8 @@ export function createBackend(config) {
   // {host, port, dataDir, setupToken, devAccounts}: absent fields default to
   // explicit-dev behavior.
   const authMode = config.authMode ?? "dev";
+  // Exact-origin CORS allowlist; absent config = no CORS (fail-closed).
+  const corsAllowedOrigins = parseCorsAllowedOrigins(config.corsAllowedOrigins);
   const staleAfterSeconds =
     Number.isInteger(config.staleAfterSeconds) ? config.staleAfterSeconds : 300;
   const oidcVerifier = config.oidc ? createOidcVerifier(config.oidc) : null;
@@ -395,6 +403,12 @@ export function createBackend(config) {
 
   async function handler(req, res) {
     try {
+      // CORS outermost layer: preflights are answered here; for an
+      // allowlisted origin the grant headers are stamped before routing so
+      // every response — including 401/403/404 errors — carries them.
+      if (handleCorsPreflight(req, res, corsAllowedOrigins)) return;
+      applyCorsHeaders(res, corsMatchOrigin(req, corsAllowedOrigins));
+
       const url = new URL(req.url ?? "/", "http://localhost");
       const parts = url.pathname.split("/").filter(Boolean);
 

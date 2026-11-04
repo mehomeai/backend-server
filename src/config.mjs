@@ -13,6 +13,7 @@
 // issuer+subject (see src/oidc.mjs).
 
 import { readFileSync } from "node:fs";
+import { parseCorsAllowedOrigins } from "./cors.mjs";
 import {
   parseAlgorithms,
   validateJwks,
@@ -203,6 +204,8 @@ export function loadConfig(env = process.env) {
   }
   const dataDir = env.ME_BACKEND_DATA_DIR ?? "./data";
   const staleAfterSeconds = parseStaleAfterSeconds(env.ME_BACKEND_STALE_AFTER_SECONDS);
+  // Exact-origin CORS allowlist (src/cors.mjs). Unset = no CORS headers.
+  const corsAllowedOrigins = parseCorsAllowedOrigins(env.ME_CORS_ALLOWED_ORIGINS);
 
   const oidcIssuer = (env.ME_BACKEND_OIDC_ISSUER ?? "").trim();
   const explicitMode = (env.ME_BACKEND_AUTH_MODE ?? "").trim();
@@ -228,7 +231,7 @@ export function loadConfig(env = process.env) {
           "Local-dev account tokens only; never use production OAuth tokens here."
       );
     }
-    return { host, port, dataDir, staleAfterSeconds, authMode, setupToken, devAccounts, oidc: null };
+    return { host, port, dataDir, staleAfterSeconds, authMode, setupToken, devAccounts, oidc: null, corsAllowedOrigins };
   }
 
   // Hosted mode: real OIDC account verification. No fleet-wide setup secret,
@@ -283,6 +286,7 @@ export function loadConfig(env = process.env) {
     authMode,
     setupToken: null,
     devAccounts,
+    corsAllowedOrigins,
     oidc: {
       issuer: oidcIssuer,
       audience: oidcAudience,
