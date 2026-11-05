@@ -236,3 +236,104 @@ test("after the window expires (inclusive boundary), signups are admitted again"
   assert.equal(after.status, 200);
   assert.deepEqual(after.body, RECEIPT_BODY);
 });
+
+// --- Gap-audit additions (2026-11-05): behaviors pinned by the reference
+// contract suite (~/workspace/replit-copy-2026-11-03/waitlist-contract-tests,
+// 29 tests) that no branch test pinned. See
+// WAITLIST-GAP-AUDIT-2026-11-05.md rows R9, R10, R11, R16, R26, R28. ---
+
+test("non-string email variants (null, object, array) return the one exact 400 and write no row", async () => {
+  const { handle, store } = makeHandler();
+  for (const email of [null, { addr: "alice@example.com" }, ["alice@example.com"]]) {
+    const result = await handle({ ip: "203.0.113.7", body: { email, consent: true } });
+    assert.equal(result.status, 400, `email=${JSON.stringify(email)}`);
+    assert.deepEqual(result.body, ERROR_400_BODY);
+    assertNoStore(result);
+  }
+  assert.equal(store.size(), 0);
+});
+
+test("an undefined body fails validation with the same exact 400", async () => {
+  const { handle, store } = makeHandler();
+  const result = await handle({ ip: "203.0.113.7", body: undefined });
+  assert.equal(result.status, 400);
+  assert.deepEqual(result.body, ERROR_400_BODY);
+  assertNoStore(result);
+  assert.equal(store.size(), 0);
+});
+
+test("email length boundary applies to the NORMALIZED value: 254 admitted, 255 raw trimming to 254 admitted, 255 after trim rejected", async () => {
+  const { handle, store } = makeHandler();
+  const email254 = `${"a".repeat(242)}@example.com`; // exactly 254 chars
+  const email255 = `${"a".repeat(243)}@example.com`; // exactly 255 chars
+  assert.equal(email254.length, 254);
+  assert.equal(email255.length, 255);
+  // Exactly 254 after normalization: admitted.
+  const exact = await handle({ ip: "203.0.113.7", body: { email: email254, consent: true } });
+  assert.equal(exact.status, 200);
+  assert.deepEqual(exact.body, RECEIPT_BODY);
+  assertNoStore(exact);
+  // 255 raw characters but 254 after trimming the leading space: admitted
+  // (a repeat of the same normalized email, so still one stored row).
+  const padded = await handle({ ip: "203.0.113.7", body: { email: ` ${email254}`, consent: true } });
+  assert.equal(padded.status, 200);
+  assert.deepEqual(padded.body, RECEIPT_BODY);
+  assert.equal(store.size(), 1);
+  // Still 255 after trimming: over the evidenced max of 254.
+  const over = await handle({ ip: "203.0.113.7", body: { email: email255, consent: true } });
+  assert.equal(over.status, 400);
+  assert.deepEqual(over.body, ERROR_400_BODY);
+  assert.equal(store.size(), 1);
+});
+
+test("honeypot with an invalid email returns 400: validation precedes the honeypot branch", async () => {
+  const { handle, store } = makeHandler();
+  const result = await handle({
+    ip: "203.0.113.7",
+    body: { email: "not-an-email", consent: true, website: "http://spam.example" },
+  });
+  assert.equal(result.status, 400);
+  assert.deepEqual(result.body, ERROR_400_BODY);
+  assertNoStore(result);
+  assert.equal(store.size(), 0);
+});
+
+test("storage failures consume limiter capacity: after 15 signups fail with 503, the next request is 429", async () => {
+  const { handle, store } = makeHandler();
+  for (let i = 0; i < 15; i++) {
+    store.failNextInsert(new Error("underlying storage is unavailable"));
+    const result = await handle({ ip: "203.0.113.7", body: { email: "alice@example.com", consent: true } });
+    assert.equal(result.status, 503, `failing attempt ${i + 1}`);
+    assert.deepEqual(result.body, ERROR_503_BODY);
+    assertNoStore(result);
+  }
+  assert.equal(store.size(), 0);
+  // The 16th request never reaches storage: the limiter fires first, and
+  // the count-based rejection carries Retry-After.
+  const sixteenth = await handle({ ip: "203.0.113.7", body: { email: "alice@example.com", consent: true } });
+  assert.equal(sixteenth.status, 429);
+  assert.deepEqual(sixteenth.body, ERROR_429_BODY);
+  assert.equal(sixteenth.headers["retry-after"], "900");
+  assert.equal(store.size(), 0);
+});
+
+test("map cap: a NEW key at 10,000 entries gets 429 WITHOUT Retry-After (no-store still set); an existing key still proceeds", async () => {
+  const { handle, limiter } = makeHandler();
+  // Invalid emails still create limiter entries (the limiter precedes
+  // validation), exactly as in the reference scenario.
+  for (let i = 0; i < 10_000; i++) {
+    const result = await handle({ ip: "203.0.113.7", body: { email: `bad${i}`, consent: true } });
+    assert.equal(result.status, 400, `fill ${i}`);
+  }
+  assert.equal(limiter.size(), 10_000);
+  const capped = await handle({ ip: "203.0.113.7", body: { email: "new@example.com", consent: true } });
+  assert.equal(capped.status, 429);
+  assert.deepEqual(capped.body, ERROR_429_BODY);
+  assertNoStore(capped);
+  assert.equal(capped.headers["retry-after"], undefined);
+  // An existing key is unaffected by the cap: it increments and proceeds
+  // to validation, which rejects the malformed email as usual.
+  const existing = await handle({ ip: "203.0.113.7", body: { email: "bad0", consent: true } });
+  assert.equal(existing.status, 400);
+  assert.deepEqual(existing.body, ERROR_400_BODY);
+});
