@@ -158,17 +158,20 @@ Per ruling change 5, anything not in the evidence is recorded here as
 unavailable rather than invented. Each item blocks only the specific claim
 named:
 
-- **Flag configuration key name: UNAVAILABLE.** The migration plan (step 5)
-  and the ruling specify an "initially disabled deployment flag" and its
-  semantics only. No environment-variable or config key name for the flag
-  appears in any evidence source. Any statement of the form "the flag is
-  named X" is blocked until the name is fixed as a W4 implementation
-  decision (and then recorded here as a decision, not as evidence).
+- **Flag configuration key name: not evidenced — fixed as a W4
+  IMPLEMENTATION DECISION (recorded under "W3/W4 implementation record"
+  below).** The migration plan (step 5) and the ruling specify an
+  "initially disabled deployment flag" and its semantics only. No
+  environment-variable or config key name for the flag appears in any
+  evidence source. The name in use (`ME_WAITLIST_ENABLED`) is a decision
+  of this port, NOT evidence, and must never be cited as source behavior.
 - **Email-format acceptance boundary: NOT source-defined.** The schema uses
   Zod v3's built-in `.email()` check with no custom regex (workspace pins
   `zod: ^3.25.76`); which exotic addresses pass is library-defined, not an
-  evidenced literal. A port must pin this explicitly in the handler ticket
-  (W3) rather than claim source parity for exotic addresses.
+  evidenced literal. W3 pinned the port's rule explicitly (see "W3/W4
+  implementation record"): the handler implements the evidenced schema
+  rules in plain code with a pinned email pattern and does NOT claim
+  parity for exotic address forms.
 - **Express framework defaults: NOT stated in source.** Malformed-JSON
   error shape/status from `express.json()`, the default JSON body size
   limit, and related framework behaviors are not evidenced and must not be
@@ -190,6 +193,60 @@ named:
   happens only behind explicit enablement, lazily.
 - Synthetic work honors this today: nothing in the W-series enables the
   flag anywhere, and the in-memory fixture is reachable only from tests.
+
+## W3/W4 implementation record (decisions, not evidence)
+
+Everything in this section is an implementation decision of this port,
+made under the ruling where the evidence runs out. None of it is source
+behavior and none of it may be cited as such.
+
+- **Files (W3):** `src/waitlist/handler.mjs` (execution order,
+  normalization, validation, consent, honeypot, exact literals, error
+  mapping) and `src/waitlist/rate-limit.mjs` (fixed-window limiter and
+  raw-body key construction). Store, limiter, and the storage-error
+  logger are injected; the handler is a pure function of `{ ip, body }`,
+  and the HTTP layer supplies the socket remote address as `ip`.
+- **Files (W4):** the route `POST /api/me/waitlist` is registered inside
+  `createBackend` (`src/server.mjs`) only when `config.waitlistEnabled`
+  is true, reusing the existing CORS layer and `readJsonBody` unchanged,
+  and consulting no credential (outside OIDC/dev-token enforcement, as in
+  the source). No trust-proxy configuration was added anywhere.
+- **Flag key name (W4 decision): `ME_WAITLIST_ENABLED`** (parsed in
+  `src/config.mjs` into `config.waitlistEnabled`). Naming follows the
+  `ME_*` feature-env convention of `ME_CORS_ALLOWED_ORIGINS`;
+  enablement is strict — only the exact value `"1"` enables, the same
+  convention as `ME_BACKEND_OIDC_ALLOW_INSECURE_ISSUER`. Absent or any
+  other value = disabled.
+- **Store injection (W4 decision):** an enabled backend takes its store
+  from `config.waitlistStoreFactory()` (preferred; lets tests count
+  constructions) or `config.waitlistStore`. The factory is invoked
+  exactly once at backend construction when enabled, and NEVER when
+  disabled or absent — zero storage/pool initialization in the disabled
+  state, per ruling change 3. Enabling with no store injected throws at
+  construction (fail closed): no production store exists until the W5
+  PostgreSQL adapter, and a route that cannot persist must not register.
+  A clock may be injected for the limiter via `config.waitlistNow`
+  (tests only).
+- **Validation pin (W3 decision):** the evidenced schema rules
+  (`email` string + format + max 254 on the normalized value, `consent`
+  exactly `true`, optional `website` string max 200, unknown keys
+  ignored) are implemented in plain code; the email format check is the
+  pinned pattern in `src/waitlist/handler.mjs` (dot-atom local part,
+  dot-separated domain labels, alphabetic TLD ≥ 2). No dependency was
+  added. Parity with Zod's library-defined acceptance for EXOTIC address
+  forms is explicitly NOT claimed (see the blocked-claims list above).
+- **Body parsing:** the route reuses backend-server's existing
+  `readJsonBody`, so malformed JSON, non-object bodies, wrong content
+  type, and oversize bodies keep this server's existing 400/415/413
+  behavior. Those framework behaviors are not evidenced source behavior
+  (see blocked claims) and are not asserted as contract.
+- **Differential verification: PENDING.** One-line reason: the original
+  handler cannot be executed locally without deployment access — it is
+  TypeScript/Express hardwired to a Drizzle/`pg` Pool (its db module
+  throws at import when `DATABASE_URL` is unset), exposes no store or
+  clock injection points, and no PostgreSQL exists on this machine to
+  point it at. All W3/W4 tests are therefore source-derived contract
+  tests, per ruling change 1.
 
 ## Blocked step-1 evidence
 

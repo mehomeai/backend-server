@@ -206,6 +206,15 @@ export function loadConfig(env = process.env) {
   const staleAfterSeconds = parseStaleAfterSeconds(env.ME_BACKEND_STALE_AFTER_SECONDS);
   // Exact-origin CORS allowlist (src/cors.mjs). Unset = no CORS headers.
   const corsAllowedOrigins = parseCorsAllowedOrigins(env.ME_CORS_ALLOWED_ORIGINS);
+  // Waitlist route flag (ticket W4). The key name is an implementation
+  // decision, not source evidence — the evidenced Replit source has no
+  // such flag; see docs/waitlist-migration.md. Naming follows the ME_*
+  // feature-env convention of ME_CORS_ALLOWED_ORIGINS, and enablement is
+  // strict — only the exact value "1" enables, the same convention as
+  // ME_BACKEND_OIDC_ALLOW_INSECURE_ISSUER. Absent or any other value =
+  // disabled: the route stays unregistered and no waitlist store is
+  // constructed (ruling change 3).
+  const waitlistEnabled = env.ME_WAITLIST_ENABLED === "1";
 
   const oidcIssuer = (env.ME_BACKEND_OIDC_ISSUER ?? "").trim();
   const explicitMode = (env.ME_BACKEND_AUTH_MODE ?? "").trim();
@@ -231,7 +240,7 @@ export function loadConfig(env = process.env) {
           "Local-dev account tokens only; never use production OAuth tokens here."
       );
     }
-    return { host, port, dataDir, staleAfterSeconds, authMode, setupToken, devAccounts, oidc: null, corsAllowedOrigins };
+    return { host, port, dataDir, staleAfterSeconds, authMode, setupToken, devAccounts, oidc: null, corsAllowedOrigins, waitlistEnabled };
   }
 
   // Hosted mode: real OIDC account verification. No fleet-wide setup secret,
@@ -287,6 +296,7 @@ export function loadConfig(env = process.env) {
     setupToken: null,
     devAccounts,
     corsAllowedOrigins,
+    waitlistEnabled,
     oidc: {
       issuer: oidcIssuer,
       audience: oidcAudience,

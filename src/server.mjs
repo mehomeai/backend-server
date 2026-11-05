@@ -51,6 +51,8 @@ import {
   handleCorsPreflight,
   applyCorsHeaders,
 } from "./cors.mjs";
+import { createWaitlistHandler } from "./waitlist/handler.mjs";
+import { createWaitlistRateLimiter } from "./waitlist/rate-limit.mjs";
 
 const HOME_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 // H1's installation identity is opaque to this service (a uuid in H1's
@@ -391,6 +393,41 @@ export function createBackend(config) {
     ? () => config.persistFn(config.dataDir, state)
     : () => saveState(config.dataDir, state);
 
+  // Waitlist route (synthetic implementation, tickets W3-W4; see
+  // docs/waitlist-migration.md). The route is constructed ONLY when
+  // explicitly enabled in config (config.waitlistEnabled === true, from
+  // ME_WAITLIST_ENABLED=1 — see src/config.mjs). Disabled or absent:
+  // waitlistHandler stays null, the route is unregistered (the normal
+  // 404 applies), and the store factory below is NEVER invoked — zero
+  // storage/pool initialization, no credentials requested, no database
+  // contacted (ruling change 3). The store is injected: tests pass the
+  // in-memory fixture via config.waitlistStoreFactory (or a ready store
+  // via config.waitlistStore). No production store exists yet — the
+  // PostgreSQL adapter is ticket W5 and remains UNVERIFIED — so enabling
+  // the flag without injecting a store fails closed at construction
+  // rather than registering a route that cannot persist.
+  let waitlistHandler = null;
+  if (config.waitlistEnabled === true) {
+    const waitlistStore =
+      typeof config.waitlistStoreFactory === "function"
+        ? config.waitlistStoreFactory()
+        : config.waitlistStore ?? null;
+    if (!waitlistStore || typeof waitlistStore.insertOrReturnExisting !== "function") {
+      throw new Error(
+        "Waitlist route is enabled (waitlistEnabled) but no waitlist store was provided. " +
+          "Inject config.waitlistStore or config.waitlistStoreFactory; the PostgreSQL adapter " +
+          "is ticket W5 (UNVERIFIED against PostgreSQL) and no production store exists yet."
+      );
+    }
+    waitlistHandler = createWaitlistHandler({
+      store: waitlistStore,
+      limiter: createWaitlistRateLimiter(
+        typeof config.waitlistNow === "function" ? { now: config.waitlistNow } : {}
+      ),
+      logError: (err) => console.error("Me waitlist signup failed:", err),
+    });
+  }
+
   // Server-side availability: a home counts as online only with a heartbeat
   // fresher than the configured bounded threshold. Phones must not infer
   // liveness from lastStatus alone.
@@ -422,6 +459,32 @@ export function createBackend(config) {
       if (req.method === "GET" && url.pathname === "/v1/auth/config") {
         const { status, body } = buildAuthConfig(config);
         sendJson(res, status, body);
+        return;
+      }
+
+      // POST /api/me/waitlist — public launch-waitlist signup (synthetic
+      // implementation, tickets W3-W4). Registered ONLY when the waitlist
+      // flag is explicitly enabled (waitlistHandler constructed above);
+      // when disabled the path falls through to the normal unmatched-route
+      // 404 below. No account or home credential is consulted: the route
+      // sits outside OIDC/dev-token enforcement, mirroring the evidenced
+      // source, which has no auth on this route. Existing middleware and
+      // body parsing are preserved unchanged: CORS ran above, and the body
+      // goes through the same readJsonBody as every other route (malformed
+      // JSON / non-object / wrong content type keep the server's existing
+      // 400/415 behavior). Request identity for the limiter is the socket
+      // remote address; this service configures no trust-proxy anywhere,
+      // so forwarded headers are never honored.
+      if (waitlistHandler && req.method === "POST" && url.pathname === "/api/me/waitlist") {
+        const body = await readJsonBody(req);
+        const result = await waitlistHandler({ ip: req.socket?.remoteAddress, body });
+        const payload = JSON.stringify(result.body) + "\n";
+        res.writeHead(result.status, {
+          ...result.headers,
+          "content-type": "application/json; charset=utf-8",
+          "content-length": Buffer.byteLength(payload),
+        });
+        res.end(payload);
         return;
       }
 
