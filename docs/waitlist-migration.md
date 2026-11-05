@@ -248,6 +248,86 @@ behavior and none of it may be cited as such.
   point it at. All W3/W4 tests are therefore source-derived contract
   tests, per ruling change 1.
 
+## W5/W6 implementation and close-out record (decisions, not evidence)
+
+- **Files (W5):** `src/waitlist/postgres-store.mjs` (the adapter),
+  `migrations/0001_create_me_waitlist.sql` (the migration),
+  `test/waitlist-postgres-store.test.mjs` (mocked-driver tests).
+- **Adapter design:** implements the W2 contract
+  (`insertOrReturnExisting`) against an injected `poolFactory`. The pool
+  is constructed lazily, at most once, on the first storage operation;
+  importing the module creates no pool, loads no driver, reads no
+  environment, and requests no credentials. The real `pg` driver is
+  reached only through a dynamic import inside `createPgPoolFactory`,
+  which a future operator's configuration would pass a connection string
+  explicitly. Nothing in the running configuration constructs this
+  adapter: the W4 enabled route still requires an injected store and
+  fails closed without one, and the only importer of this module today
+  is its own test file.
+- **Insert-or-return-existing shape:** one atomic statement,
+  `INSERT INTO me_waitlist (email, consent_version) VALUES ($1, $2)
+  ON CONFLICT (email) DO NOTHING RETURNING email, consent_version,
+  created_at`. A returned row means `inserted: true`. No row means a
+  conflict, and a follow-up `SELECT ... WHERE email = $1` returns the
+  persisted row (`inserted: false`). All values are bound parameters;
+  nothing is interpolated into SQL text. Concurrency reasoning (full
+  text in the adapter's header comment): the INSERT never updates an
+  existing row, so original `consent_version`/`created_at` cannot be
+  overwritten; under READ COMMITTED a concurrent uncommitted insert of
+  the same email makes the statement wait, after which it either skips
+  (conflicting transaction committed, row then visible to the SELECT)
+  or proceeds (it aborted) — exactly one row ever exists, guaranteed by
+  the database's UNIQUE constraint, not application code. The residual
+  anomaly (no row inserted, no row visible) is handled with one bounded
+  retry of the insert-or-select cycle, then a `WaitlistStorageError`;
+  a row is never manufactured. Storage failures surface only as
+  `WaitlistStorageError` with the underlying error as `cause`; the
+  client is released on every path.
+- **Migration convention:** this repository had NO migration convention
+  (backend-server historically persists to a JSON store; no migrations
+  directory or tooling existed). The W5 migration establishes one: a
+  top-level `migrations/` directory of sequentially numbered,
+  descriptively named `.sql` files applied in filename order.
+  `0001_create_me_waitlist.sql` encodes exactly the evidenced schema
+  (serial PK, `email text NOT NULL UNIQUE`, `consent_version text NOT
+  NULL`, `created_at timestamptz NOT NULL DEFAULT now()`).
+- **Dependency:** `pg ^8.23.1` was added with `npm install --save pg`
+  from this VM (the registry cooperated this time); npm itself updated
+  both `package.json` and `package-lock.json`, so there is no
+  lockfile-regeneration debt. The mocked-driver tests inject a fake
+  pool through the `poolFactory` seam and never load the real driver.
+- **UNVERIFIED statement (explicit):** the adapter and the migration are
+  **UNVERIFIED against PostgreSQL**. No database connection was
+  attempted anywhere in W5 or W6 — no PostgreSQL exists on this machine
+  and none was provisioned. The mocked-driver tests verify parameter
+  binding, result mapping, failure propagation, client release, lazy
+  construction, and the conflict/retry control flow ONLY. They do NOT
+  verify PostgreSQL syntax, the migration, transaction isolation
+  behavior, or actual uniqueness enforcement. Promotion requires the
+  gates in "Promotion gates for the PostgreSQL adapter (W5)" below,
+  which were re-read against the ruling at W6 close-out and are
+  complete and current.
+- **W6 close-out — commands run (2026-11-05):**
+  `node --test test/waitlist-postgres-store.test.mjs` → 11/11 pass.
+  `npm test` (the repo's full suite, `node --test test/*.test.mjs`) →
+  92/92 pass (branch baseline before W5: 81/81; +11 new). Lint,
+  typecheck, and build checks: **not defined in repo** — `package.json`
+  defines only `start` and `test` scripts, and there is no ESLint
+  config or `tsconfig.json`.
+- **W6 diff review:** the full branch diff (`git diff main...HEAD`,
+  16 files) was reviewed for the four ruling prohibitions. Result:
+  NONE present. No enabled configuration (the flag remains
+  parser-definition plus tests only; nothing anywhere sets
+  `ME_WAITLIST_ENABLED`, and no env/deployment file is in the diff);
+  no credential or secret (the only connection-string-shaped text is an
+  obviously fake `postgres://unused.invalid/db` placeholder inside a
+  test, never invoked); no production-data operation (no data files,
+  seeds, or live calls; the migration SQL was never applied anywhere);
+  no provisioning change (no infrastructure files; the migration file
+  is a schema definition artifact only). The W-series therefore closes
+  as **implemented, synthetic verification only** — migration step 1
+  remains BLOCKED and nothing here is production-ready.
+
 ## Blocked step-1 evidence
 
 Migration-plan step 1 is an evidence gate: the endpoint's production store
