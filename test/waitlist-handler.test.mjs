@@ -337,3 +337,47 @@ test("map cap: a NEW key at 10,000 entries gets 429 WITHOUT Retry-After (no-stor
   assert.equal(existing.status, 400);
   assert.deepEqual(existing.body, ERROR_400_BODY);
 });
+
+// --- Zod validation port (2026-11-05, Codex ruling 01a1ae31 step 4):
+// the handler validates with the pinned Zod v3.25.76 schema instead of
+// the former hand-written pattern. These cases pin the observed Zod
+// boundary for the forms where the two rules disagreed (see
+// scripts/waitlist-email-corpus.mjs, which runs the same corpus against
+// the frozen T5 oracle): Zod rejects dot-placement and `%` forms the old
+// pattern accepted, and accepts underscore locals and trailing-hyphen
+// domain labels the old pattern rejected. Quoted/unicode/IP-literal
+// forms are rejected by both rules and are pinned here as well. ---
+
+test("email-format boundary is Zod v3.25.76's .email(): exotic forms decided by the library", async () => {
+  const { handle, store } = makeHandler();
+  // Admitted by Zod (each inserts one row); the old pinned pattern
+  // rejected all four.
+  const admitted = ["a_b@example.com", "a@example-.com", "a@a-.com", "a@b-.co"];
+  for (const email of admitted) {
+    const result = await handle({ ip: "203.0.113.7", body: { email, consent: true } });
+    assert.equal(result.status, 200, email);
+    assert.deepEqual(result.body, RECEIPT_BODY);
+    assertNoStore(result);
+  }
+  assert.equal(store.size(), admitted.length);
+  // Rejected by Zod; the old pinned pattern admitted the first five.
+  const rejected = [
+    "a..b@example.com",
+    ".a@example.com",
+    "a.@example.com",
+    "a%b@example.com",
+    "a..a@a.bb",
+    // Rejected by both rules; pinned here so the boundary is explicit.
+    '"quoted local"@example.com',
+    "münchen@example.de",
+    "a@[127.0.0.1]",
+    "a@b.c",
+  ];
+  for (const email of rejected) {
+    const result = await handle({ ip: "203.0.113.7", body: { email, consent: true } });
+    assert.equal(result.status, 400, email);
+    assert.deepEqual(result.body, ERROR_400_BODY);
+    assertNoStore(result);
+  }
+  assert.equal(store.size(), admitted.length);
+});

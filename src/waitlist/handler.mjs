@@ -42,14 +42,18 @@
 // first signup, a repeat signup, and a honeypot submission are publicly
 // indistinguishable, exactly as in the source.
 //
-// Validation implementation decision (W3, recorded in
-// docs/waitlist-migration.md): the schema rules are implemented in plain
-// code with the pinned email pattern below instead of adding the Zod
-// library. W1 recorded that WHICH exotic addresses Zod's built-in .email()
-// accepts is library-defined and not an evidenced literal; this port
-// therefore pins its acceptance rule explicitly here and does NOT claim
-// parity for exotic address forms. Ordinary valid/invalid addresses behave
-// identically under either rule.
+// Validation implementation (Zod port, Codex ruling 01a1ae31 step 4,
+// 2026-11-05): the schema rules are the generated source schema
+// (lib/api-zod/src/generated/api.ts:16-20), implemented with the same Zod
+// major version the source pins (zod 3.25.76), so the `.email()`
+// acceptance boundary — including exotic address forms — is the
+// library-defined one, exactly as in the source and in the frozen T5
+// reference (branch waitlist-synthetic-t5 @ 7dfe91a). This supersedes the
+// W3 pinned-regex decision: the hand-written pattern is gone, and exotic
+// parity is now claimed only insofar as both sides use the same pinned
+// Zod version and the same schema shape. The schema is exported so the
+// email-boundary corpus (scripts/waitlist-email-corpus.mjs) can run the
+// ported path against the T5 oracle.
 //
 // Framework shape: the handler is a pure async function of
 // { ip, body } -> { status, headers, body }, so contract tests exercise
@@ -61,6 +65,7 @@
 // (malformed JSON, content type, size limit) remains the HTTP layer's
 // existing behavior and is not reproduced here.
 
+import { z } from "zod";
 import { WaitlistStorageError } from "./store.mjs";
 import { buildWaitlistLimiterKey } from "./rate-limit.mjs";
 
@@ -82,26 +87,28 @@ const ERROR_503 = Object.freeze({
 
 const EMAIL_MAX_LENGTH = 254;
 const WEBSITE_MAX_LENGTH = 200;
-// Pinned email acceptance rule (W3 decision, see header): a non-empty
-// dot-atom local part, a domain of dot-separated alphanumeric labels, and
-// a final alphabetic TLD of at least two characters.
-const EMAIL_PATTERN =
-  /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 
-// Validate the NORMALIZED input against the evidenced schema rules.
+// The evidenced request schema (source lib/api-zod/src/generated/api.ts,
+// Orval output from lib/api-spec/openapi.yaml; same shape as the frozen
+// T5 reference): email is a Zod v3 email, max 254 chars; consent must be
+// exactly `true`; website (honeypot) is an optional string of at most 200
+// chars. Unknown keys are stripped (Zod default), as in the source.
+export const JoinMeWaitlistBody = z.object({
+  email: z.string().email().max(EMAIL_MAX_LENGTH),
+  consent: z.literal(true),
+  website: z.string().max(WEBSITE_MAX_LENGTH).optional(),
+});
+
+// Validate the NORMALIZED input against the evidenced schema.
 // Returns { email, website } on success, null on any failure — the source
 // maps every failure kind to the one 400 body, so no detail is returned.
+// The consent check is belt-and-braces (the schema is already
+// zod.literal(true), so it can never fire on a successful parse); kept to
+// match the source line-for-line, as in the T5 reference.
 function validateWaitlistInput(input) {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
-  const { email, consent, website } = input;
-  if (typeof email !== "string" || email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
-    return null;
-  }
-  if (consent !== true) return null;
-  if (website !== undefined && (typeof website !== "string" || website.length > WEBSITE_MAX_LENGTH)) {
-    return null;
-  }
-  return { email, website };
+  const parsed = JoinMeWaitlistBody.safeParse(input);
+  if (!parsed.success || parsed.data.consent !== true) return null;
+  return { email: parsed.data.email, website: parsed.data.website };
 }
 
 export function createWaitlistHandler({ store, limiter, logError = () => {} } = {}) {

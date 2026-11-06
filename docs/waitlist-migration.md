@@ -165,13 +165,16 @@ named:
   environment-variable or config key name for the flag appears in any
   evidence source. The name in use (`ME_WAITLIST_ENABLED`) is a decision
   of this port, NOT evidence, and must never be cited as source behavior.
-- **Email-format acceptance boundary: NOT source-defined.** The schema uses
-  Zod v3's built-in `.email()` check with no custom regex (workspace pins
-  `zod: ^3.25.76`); which exotic addresses pass is library-defined, not an
-  evidenced literal. W3 pinned the port's rule explicitly (see "W3/W4
-  implementation record"): the handler implements the evidenced schema
-  rules in plain code with a pinned email pattern and does NOT claim
-  parity for exotic address forms.
+- **Email-format acceptance boundary: library-defined (Zod v3.25.76),
+  ported 2026-11-05.** The schema uses Zod v3's built-in `.email()`
+  check with no custom regex (workspace pins `zod: ^3.25.76`); which
+  exotic addresses pass is library-defined, not an evidenced literal.
+  The port now uses the same pinned Zod version and schema shape as the
+  source, so the boundary is the library's, not a hand-written rule
+  (see "W3/W4 implementation record": the W3 pinned-regex decision was
+  superseded by the Zod port per Codex ruling 01a1ae31 step 4, and the
+  email-boundary corpus in `scripts/waitlist-email-corpus.mjs` pins the
+  observed boundary against the frozen T5 oracle).
 - **Express framework defaults: NOT stated in source.** Malformed-JSON
   error shape/status from `express.json()`, the default JSON body size
   limit, and related framework behaviors are not evidenced and must not be
@@ -227,14 +230,23 @@ behavior and none of it may be cited as such.
   PostgreSQL adapter, and a route that cannot persist must not register.
   A clock may be injected for the limiter via `config.waitlistNow`
   (tests only).
-- **Validation pin (W3 decision):** the evidenced schema rules
+- **Validation pin (W3 decision, SUPERSEDED 2026-11-05 by the Zod port
+  per Codex ruling 01a1ae31 step 4):** the evidenced schema rules
   (`email` string + format + max 254 on the normalized value, `consent`
   exactly `true`, optional `website` string max 200, unknown keys
-  ignored) are implemented in plain code; the email format check is the
-  pinned pattern in `src/waitlist/handler.mjs` (dot-atom local part,
-  dot-separated domain labels, alphabetic TLD ≥ 2). No dependency was
-  added. Parity with Zod's library-defined acceptance for EXOTIC address
-  forms is explicitly NOT claimed (see the blocked-claims list above).
+  ignored) were first implemented in plain code; the email format check
+  was a pinned pattern in `src/waitlist/handler.mjs` (dot-atom local
+  part, dot-separated domain labels, alphabetic TLD ≥ 2) and no
+  dependency was added. That decision is superseded: the handler now
+  validates with the generated source schema itself
+  (`JoinMeWaitlistBody`, `zod` 3.25.76, same shape as the frozen T5
+  reference), so the `.email()` acceptance boundary — including exotic
+  forms — is the pinned library's. The boundary is pinned empirically
+  by the email-boundary corpus (`scripts/waitlist-email-corpus.mjs`,
+  run against the T5 oracle) and by the Zod-boundary handler test.
+  Parity with Zod's library-defined acceptance is therefore claimed
+  only for the pinned version (3.25.76); a Zod upgrade re-opens the
+  corpus.
 - **Body parsing:** the route reuses backend-server's existing
   `readJsonBody`, so malformed JSON, non-object bodies, wrong content
   type, and oversize bodies keep this server's existing 400/415/413
