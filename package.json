@@ -13,6 +13,8 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "jose": "^6.2.15"
+    "jose": "^6.2.15",
+    "pg": "^8.23.1",
+    "zod": "3.25.76"
   }
 }

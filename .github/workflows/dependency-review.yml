@@ -20,3 +20,7 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # Owner-approved exception (2026-11-06) for the waitlist Zod
+          # pin; see "Dependency-review exception" in
+          # docs/waitlist-migration.md. GHSA-mrhx-c7xc-m3w5 only.
+          allow-ghsas: GHSA-mrhx-c7xc-m3w5
