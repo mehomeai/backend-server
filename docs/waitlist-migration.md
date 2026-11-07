@@ -422,3 +422,38 @@ Adapter verification does NOT authorize production enablement or data
 migration. Those still require the outstanding authorized Replit
 deployment evidence, live row-count evidence, the plan step-3 owner
 decisions, and the remaining original migration gates.
+
+## Dependency-review exception — GHSA-mrhx-c7xc-m3w5 (zod 3.25.76)
+
+Recorded 2026-11-06, per Codex ruling 01a1aecc (route (d)) and the
+repository owner's explicit approval on 2026-11-06.
+
+- **Advisory:** GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404, high severity —
+  "Zod can exhaust memory while validating oversized constrained
+  collections." Vulnerable range < 4.6.6; first patched version 4.6.6 is
+  on the Zod v4 line. **No patched 3.x exists**; 3.25.76 is the last 3.x
+  release.
+- **Pinned dependency:** `zod` is pinned exactly `3.25.76` in
+  package.json; the installed package in node_modules was confirmed to be
+  3.25.76.
+- **All Zod imports and usages in this repository:** exactly one import,
+  `src/waitlist/handler.mjs` (`import { z } from "zod"`), and exactly one
+  schema, `JoinMeWaitlistBody`: `email` (string, `.email()`, max 254),
+  `consent` (`z.literal(true)`), `website` (optional string, max 200).
+  There are **zero** `z.array` / `.array(` uses anywhere in src, test, or
+  scripts.
+- **Why the vulnerable path is not reachable:** the advisory concerns
+  validating oversized constrained *collections* (arrays). No array or
+  collection schema is ever constructed or parsed by this codebase, so
+  the vulnerable code path is never exercised by the waitlist handler or
+  anything else in this repo.
+- **Scope of the exception:** the `allow-ghsas` entry in
+  `.github/workflows/dependency-review.yml` suppresses this one advisory
+  **repository-wide**, not only for the waitlist schema. It is the only
+  allowlisted advisory; `fail-on-severity: high` is unchanged.
+- **Approval:** repository owner (Khagendra) approved this exception
+  explicitly on 2026-11-06. Review date: 2026-11-06.
+- **Reassessment requirement:** this exception must be reassessed before
+  any Zod collection (array) schema is introduced anywhere in this
+  repository, and removed when zod is upgraded to a patched release line
+  (>= 4.6.6) or the dependency is dropped.
